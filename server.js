@@ -53,7 +53,7 @@ const sendEmail = async (email, tempPassword) => {
     const transporter = nodemailer.createTransport({
         host: "smtp-relay.brevo.com",
         port: 587,
-        secure: false, // upgrade later with STARTTLS
+        secure: false,
         auth: {
             user: "surajbitla856@gmail.com",
             pass: "xsmtpsib-86bb5726d927cbefe740976d6053803a3aea6fbab13f45a5526608de136c9688-3gpAzVrGZDcwbSFB"
@@ -64,7 +64,16 @@ const sendEmail = async (email, tempPassword) => {
         from: 'surajbitla856@gmail.com',
         to: email,
         subject: 'Your Temporary Password',
-        text: `Hello! Your temporary password is: ${tempPassword}`
+        html: `
+        <div style="font-family: Arial, sans-serif; color: #333;">
+            <h2>Hello,</h2>
+            <p>Your temporary password is: <strong>${tempPassword}</strong></p>
+            <p>Please use this password to log in to your account. For your security, we recommend you update your password immediately after logging in.</p>
+            <p>If you did not request a temporary password, please contact our support team immediately.</p>
+            <p><a href="http://localhost:3000/login" style="background-color: #0046f4; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Log In</a></p>
+            <p>Thank you,<br>ShopRight Team</p>
+        </div>
+    `
     };
 
     try {
