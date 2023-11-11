@@ -41,7 +41,7 @@ const rateLimit = require("express-rate-limit");
 
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // limit to 5 requests per windowMs
+    max: 15, // limit to 5 requests per windowMs
     message: "Too many login attempts, please try again later.",
     keyGenerator: function(req, res) {
         return req.body.email; 
@@ -110,7 +110,8 @@ app.post('/signup',async  (req, res) => {
 
 app.post('/login',loginLimiter, (req, res) => {
     const { email, password } = req.body;
-    const query = 'SELECT password, is_temp_password FROM users WHERE email = ?';
+    const query = 'SELECT id, email, firstname,lastName, password, is_temp_password FROM users WHERE email = ?';
+
     connection.query(query, [email], async (error, results) => {
       if (error) {
         console.error("Error fetching user:", error);
@@ -121,13 +122,18 @@ app.post('/login',loginLimiter, (req, res) => {
         return res.status(401).send("No user found with this email");
       }
   
+      const user = results[0];
       // Compare provided password with stored hashed password
-      const isTempPassword = results[0].is_temp_password === 1; // MySQL might return this as a number
-      const isPasswordCorrect = await bcrypt.compare(password, results[0].password);
+      const isTempPassword = user.is_temp_password === 1; // MySQL might return this as a number
+      const isPasswordCorrect = await bcrypt.compare(password, user.password);
       if (!isPasswordCorrect) {
         return res.status(401).send("Incorrect password");
       }
-      res.json({ message: "Logged in successfully", isTempPassword });
+      res.json({
+        message: "Logged in successfully",
+        isTempPassword,
+        user // send the user details
+    });
     });
   });
 
@@ -164,7 +170,156 @@ app.post('/login',loginLimiter, (req, res) => {
     });
 });
 
+app.put('/cart/:userId', (req, res) => {
+  const { userId } = req.params;
+  const cartItems = req.body; // expecting an array of cart items
 
+  // Start the transaction
+  connection.beginTransaction((err) => {
+    if (err) {
+      console.error('Transaction Error:', err);
+      return res.status(500).send('Internal server error');
+    }
+
+    // Step 1: Get or create a cart for the user
+    const getOrCreateCartQuery = `
+      INSERT INTO carts (user_id)
+      SELECT ? WHERE NOT EXISTS (
+        SELECT 1 FROM carts WHERE user_id = ?
+      );
+    `;
+
+    connection.query(getOrCreateCartQuery, [userId, userId], (error, results) => {
+      if (error) {
+        return connection.rollback(() => {
+          console.error('Rollback Error:', error);
+          res.status(500).send('Error getting or creating cart');
+        });
+      }
+
+      // Step 2: Retrieve the cart_id
+      const selectCartIdQuery = 'SELECT cart_id FROM carts WHERE user_id = ? LIMIT 1';
+      connection.query(selectCartIdQuery, [userId], (error, results) => {
+        if (error || results.length === 0) {
+          return connection.rollback(() => {
+            console.error('Rollback Error:', error);
+            res.status(500).send('Error retrieving cart id');
+          });
+        }
+
+        const cartId = results[0].cart_id;
+
+        // Step 3: Clear existing cart items
+        const deleteQuery = 'DELETE FROM cart_items WHERE cart_id = ?';
+        connection.query(deleteQuery, [cartId], (error, deleteResult) => {
+          if (error) {
+            return connection.rollback(() => {
+              console.error('Rollback Error:', error);
+              res.status(500).send('Error clearing cart items');
+            });
+          }
+
+          // Step 4: Insert new cart items if any
+          if (cartItems.length > 0) {
+            const insertQuery = 'INSERT INTO cart_items (cart_id, product_id, quantity, price) VALUES ?';
+            const values = cartItems.map(item => [cartId, item.id, item.quantity, item.price]);
+            connection.query(insertQuery, [values], (error, insertResult) => {
+              if (error) {
+                return connection.rollback(() => {
+                  console.error('Rollback Error:', error);
+                  res.status(500).send('Error inserting cart items');
+                });
+              }
+
+              connection.commit((err) => {
+                if (err) {
+                  return connection.rollback(() => {
+                    console.error('Commit Rollback Error:', err);
+                    res.status(500).send('Error finalizing cart update');
+                  });
+                }
+                console.log('Transaction Complete.');
+                res.send('Cart updated successfully');
+              });
+            });
+          } else {
+            // If there are no items to insert, commit the transaction
+            connection.commit((err) => {
+              if (err) {
+                return connection.rollback(() => {
+                  console.error('Commit Rollback Error:', err);
+                  res.status(500).send('Error finalizing cart update');
+                });
+              }
+              console.log('Transaction Complete with empty cart.');
+              res.send('Cart updated successfully with no items');
+            });
+          }
+        });
+      });
+    });
+  });
+});
+
+app.get('/cart/:userId', (req, res) => {
+  const { userId } = req.params;
+
+  // Begin transaction to fetch user cart
+  connection.beginTransaction((err) => {
+    if (err) {
+      console.error('Transaction Error:', err);
+      return res.status(500).send('Internal server error');
+    }
+
+    // Step 1: Get the cart_id for the user
+    const selectCartIdQuery = 'SELECT cart_id FROM carts WHERE user_id = ? LIMIT 1';
+    connection.query(selectCartIdQuery, [userId], (error, results) => {
+      if (error) {
+        return connection.rollback(() => {
+          console.error('Rollback Error:', error);
+          res.status(500).send('Error retrieving cart id');
+        });
+      }
+
+      // Check if a cart was found
+      if (results.length === 0) {
+        return res.status(404).send('No cart found for this user');
+      }
+
+      const cartId = results[0].cart_id;
+
+      // Step 2: Fetch cart items for the cart_id
+      const selectCartItemsQuery = `
+        SELECT  ci.product_id as id, ci.quantity, ci.price, p.description, p.image
+        FROM cart_items ci
+        JOIN products p ON ci.product_id = p.id
+        WHERE ci.cart_id = ?;
+      `;
+      connection.query(selectCartItemsQuery, [cartId], (error, cartItems) => {
+        if (error) {
+          return connection.rollback(() => {
+            console.error('Rollback Error:', error);
+            res.status(500).send('Error retrieving cart items');
+          });
+        }
+
+        // If there are no errors, commit the transaction and return the cart items
+        connection.commit((err) => {
+          if (err) {
+            return connection.rollback(() => {
+              console.error('Commit Rollback Error:', err);
+              res.status(500).send('Error finalizing cart retrieval');
+            });
+          }
+          cartItems.forEach(item => {
+            item.price = parseFloat(item.price);
+          });
+          res.json(cartItems);
+        });
+      });
+    });
+  });
+});
 
 
 app.listen(PORT, () => {
