@@ -365,6 +365,205 @@ app.get('/cart/:userId', (req, res) => {
   });
 });
 
+app.get('/addresses/:userId', (req, res) => {
+  const { userId } = req.params;
+
+  // SQL query to fetch addresses
+  const query = `
+      SELECT address_id, address_line, city, state, postal_code, is_primary
+      FROM addresses
+      WHERE user_id = ?;
+  `;
+
+  connection.query(query, [userId], (error, results) => {
+      if (error) {
+          console.error('Error fetching addresses:', error);
+          return res.status(500).send('Internal server error');
+      }
+
+      // If addresses are found, send them back to the client
+      if (results.length > 0) {
+          res.json(results);
+      } else {
+          // No addresses found for this user
+          res.status(404).send('No addresses found for this user');
+      }
+  });
+});
+
+app.post('/addresses', (req, res) => {
+  const { userId, addressLine, city, state, postalCode, isPrimary } = req.body;
+  const query = 'INSERT INTO addresses (user_id, address_line, city, state, postal_code, is_primary) VALUES (?, ?, ?, ?, ?, ?)';
+
+  connection.query(query, [userId, addressLine, city, state, postalCode, isPrimary], (error, results) => {
+      if (error) {
+          console.error('Error adding address:', error);
+          res.status(500).send('Error adding address');
+          return;
+      }
+      res.send('Address added successfully');
+  });
+});
+
+app.delete('/addresses/:addressId', (req, res) => {
+  const { addressId } = req.params;
+  const query = 'DELETE FROM addresses WHERE address_id = ?';
+
+  connection.query(query, [addressId], (error, results) => {
+      if (error) {
+          console.error('Error removing address:', error);
+          res.status(500).send('Internal server error');
+          return;
+      }
+      res.send('Address deleted successfully');
+  });
+});
+
+
+app.put('/addresses/:addressId/set-primary', (req, res) => {
+  const { addressId } = req.params;
+  const { userId } = req.body; // User ID for additional validation
+
+  // Begin transaction
+  connection.beginTransaction((err) => {
+      if (err) {
+          console.error('Transaction Error:', err);
+          return res.status(500).send('Internal server error');
+      }
+
+      // Step 1: Set all addresses of the user to non-primary
+      const resetQuery = 'UPDATE addresses SET is_primary = FALSE WHERE user_id = ?';
+      connection.query(resetQuery, [userId], (error) => {
+          if (error) {
+              return connection.rollback(() => {
+                  console.error('Rollback Error:', error);
+                  res.status(500).send('Error updating addresses');
+              });
+          }
+
+          // Step 2: Set the selected address as primary
+          const updateQuery = 'UPDATE addresses SET is_primary = TRUE WHERE address_id = ? AND user_id = ?';
+          connection.query(updateQuery, [addressId, userId], (error) => {
+              if (error) {
+                  return connection.rollback(() => {
+                      console.error('Rollback Error:', error);
+                      res.status(500).send('Error setting primary address');
+                  });
+              }
+
+              // Commit transaction
+              connection.commit((err) => {
+                  if (err) {
+                      return connection.rollback(() => {
+                          console.error('Commit Rollback Error:', err);
+                          res.status(500).send('Error finalizing address update');
+                      });
+                  }
+                  res.send('Primary address updated successfully');
+              });
+          });
+      });
+  });
+});
+
+
+
+app.get('/payments/:userId', (req, res) => {
+  const { userId } = req.params;
+  const query = `
+      SELECT payment_id, card_number, card_type, expiry_date, cvv, is_default
+      FROM payments
+      WHERE user_id = ?;
+  `;
+
+  connection.query(query, [userId], (error, results) => {
+      if (error) {
+          console.error('Error fetching payments:', error);
+          return res.status(500).send('Internal server error');
+      }
+
+      if (results.length > 0) {
+          res.json(results);
+      } else {
+          res.status(404).send('No payments found for this user');
+      }
+  });
+});
+
+
+app.post('/payments', (req, res) => {
+  const { userId, cardNumber, cardType, expiryDate, cvv, isDefault } = req.body;
+  const query = 'INSERT INTO payments (user_id, card_number, card_type, expiry_date, cvv, is_default) VALUES (?, ?, ?, ?, ?, ?)';
+
+  connection.query(query, [userId, cardNumber, cardType, expiryDate, cvv, isDefault], (error, results) => {
+      if (error) {
+          console.error('Error adding payment method:', error);
+          res.status(500).send('Error adding payment method');
+          return;
+      }
+      res.send('Payment method added successfully');
+  });
+});
+
+
+app.delete('/payments/:paymentId', (req, res) => {
+  const { paymentId } = req.params;
+  const query = 'DELETE FROM payments WHERE payment_id = ?';
+
+  connection.query(query, [paymentId], (error, results) => {
+      if (error) {
+          console.error('Error removing payment method:', error);
+          res.status(500).send('Internal server error');
+          return;
+      }
+      res.send('Payment method deleted successfully');
+  });
+});
+
+
+app.put('/payments/:paymentId/set-default', (req, res) => {
+  const { paymentId } = req.params;
+  const { userId } = req.body;
+
+  connection.beginTransaction((err) => {
+      if (err) {
+          console.error('Transaction Error:', err);
+          return res.status(500).send('Internal server error');
+      }
+
+      const resetQuery = 'UPDATE payments SET is_default = FALSE WHERE user_id = ?';
+      connection.query(resetQuery, [userId], (error) => {
+          if (error) {
+              return connection.rollback(() => {
+                  console.error('Rollback Error:', error);
+                  res.status(500).send('Error resetting default payment');
+              });
+          }
+
+          const updateQuery = 'UPDATE payments SET is_default = TRUE WHERE payment_id = ? AND user_id = ?';
+          connection.query(updateQuery, [paymentId, userId], (error) => {
+              if (error) {
+                  return connection.rollback(() => {
+                      console.error('Rollback Error:', error);
+                      res.status(500).send('Error setting default payment');
+                  });
+              }
+
+              connection.commit((err) => {
+                  if (err) {
+                      return connection.rollback(() => {
+                          console.error('Commit Rollback Error:', err);
+                          res.status(500).send('Error finalizing payment update');
+                      });
+                  }
+                  res.send('Default payment method updated successfully');
+              });
+          });
+      });
+  });
+});
+
+
 
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);
