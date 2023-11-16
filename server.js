@@ -108,6 +108,50 @@ app.post('/signup',async  (req, res) => {
     });
 });
 
+app.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+
+  // Verify if user exists
+  const query = 'SELECT * FROM users WHERE email = ?';
+  connection.query(query, [email], async (error, results) => {
+      if (error) {
+          console.error("Error querying the database:", error);
+          res.status(500).send("Error processing your request");
+          return;
+      }
+
+      if (results.length === 0) {
+          res.status(404).send("User not found");
+          return;
+      }
+
+      // Generate a temporary password
+      const tempPassword = generateTempPassword();
+      const hashedPassword = await bcrypt.hash(tempPassword, saltRounds);
+
+      // Update user's password in the database
+      const updateQuery = 'UPDATE users SET password = ?, is_temp_password = TRUE WHERE email = ?';
+      connection.query(updateQuery, [hashedPassword, email], async (updateError) => {
+          if (updateError) {
+              console.error("Error updating the database:", updateError);
+              res.status(500).send("Error updating user's password");
+              return;
+          }
+
+          // Send email with temporary password
+          try {
+              await sendEmail(email, tempPassword);
+              res.send("Temporary password has been sent to your email");
+          } catch (emailError) {
+              console.error("Error sending email:", emailError);
+              res.status(500).send("Password reset, but there was an error sending the email.");
+          }
+      });
+  });
+});
+
+
+
 app.post('/login',loginLimiter, (req, res) => {
     const { email, password } = req.body;
     const query = 'SELECT id, email, firstName,lastName, password, is_temp_password, phoneNumber FROM users WHERE email = ?';
