@@ -1,5 +1,18 @@
 show databases;
+create database shopright;
 use shopright;
+
+CREATE TABLE users (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  firstName VARCHAR(255) NOT NULL,
+  lastName VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  phoneNumber VARCHAR(15) NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  is_temp_password TINYINT DEFAULT 1,
+  registered_date DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 
 show tables;
 describe users;
