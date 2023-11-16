@@ -56,7 +56,7 @@ const sendEmail = async (email, tempPassword) => {
         secure: false,
         auth: {
             user: "surajbitla856@gmail.com",
-            pass: "xsmtpsib-86bb5726d927cbefe740976d6053803a3aea6fbab13f45a5526608de136c9688-3gpAzVrGZDcwbSFB"
+            pass: "xsmtpsib-86bb5726d927cbefe740976d6053803a3aea6fbab13f45a5526608de136c9688-K86cRJ31nZ0TGUDp"
         }
     });
 
@@ -110,7 +110,7 @@ app.post('/signup',async  (req, res) => {
 
 app.post('/login',loginLimiter, (req, res) => {
     const { email, password } = req.body;
-    const query = 'SELECT id, email, firstname,lastName, password, is_temp_password FROM users WHERE email = ?';
+    const query = 'SELECT id, email, firstName,lastName, password, is_temp_password, phoneNumber FROM users WHERE email = ?';
 
     connection.query(query, [email], async (error, results) => {
       if (error) {
