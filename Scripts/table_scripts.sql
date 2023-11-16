@@ -86,3 +86,29 @@ CREATE TABLE cart_items (
 
 select * from carts;
 select * from cart_items;
+
+CREATE TABLE addresses (
+    address_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    address_line VARCHAR(255),
+    city VARCHAR(100),
+    state VARCHAR(100),
+    postal_code VARCHAR(20),
+    is_primary BOOLEAN,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE payments (
+    payment_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    card_number VARCHAR(255),
+    card_type VARCHAR(50),
+    expiry_date VARCHAR(10),
+    cvv VARCHAR(5),
+    is_default BOOLEAN,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+truncate table addresses;
+select * from addresses;
+select* from payments; 
