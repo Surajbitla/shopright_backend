@@ -56,7 +56,7 @@ const sendEmail = async (email, tempPassword) => {
         secure: false,
         auth: {
             user: "surajbitla856@gmail.com",
-            pass: "xsmtpsib-86bb5726d927cbefe740976d6053803a3aea6fbab13f45a5526608de136c9688-K86cRJ31nZ0TGUDp"
+            pass: "xsmtpsib-86bb5726d927cbefe740976d6053803a3aea6fbab13f45a5526608de136c9688-jIQm0GJA4wTFxUbs"
         }
     });
 
@@ -560,6 +560,124 @@ app.put('/payments/:paymentId/set-default', (req, res) => {
               });
           });
       });
+  });
+});
+
+
+
+app.post('/place-order', (req, res) => {
+  const { userId, totalPrice, shippingAddressId, paymentMethodId } = req.body;
+
+  connection.beginTransaction((err) => {
+    if (err) {
+      console.error('Transaction Error:', err);
+      return res.status(500).send('Internal server error');
+    }
+
+    // Step 1: Create a new order entry
+    const createOrderQuery = `
+        INSERT INTO orders (user_id, total_price, shipping_address_id, payment_method_id)
+        VALUES (?, ?, ?, ?);
+    `;
+    connection.query(createOrderQuery, [userId, totalPrice, shippingAddressId, paymentMethodId], (error, orderResult) => {
+      if (error) {
+        return connection.rollback(() => {
+          console.error('Error creating order:', error);
+          res.status(500).send('Error creating order');
+        });
+      }
+
+      const orderId = orderResult.insertId;
+
+      // Step 2: Retrieve cart items
+      const selectCartItemsQuery = 'SELECT product_id, quantity, price FROM cart_items WHERE cart_id = (SELECT cart_id FROM carts WHERE user_id = ?)';
+      connection.query(selectCartItemsQuery, [userId], (error, cartItems) => {
+        if (error) {
+          return connection.rollback(() => {
+            console.error('Error retrieving cart items:', error);
+            res.status(500).send('Error retrieving cart items');
+          });
+        }
+
+        // Step 3: Insert cart items into order_items
+        const orderItemsValues = cartItems.map(item => [orderId, item.product_id, item.quantity, item.price]);
+        if (orderItemsValues.length > 0) {
+          const insertOrderItemsQuery = 'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ?';
+          connection.query(insertOrderItemsQuery, [orderItemsValues], (error) => {
+            if (error) {
+              return connection.rollback(() => {
+                console.error('Error inserting order items:', error);
+                res.status(500).send('Error inserting order items');
+              });
+            }
+
+            // Step 4: Clear the user's cart
+            const clearCartQuery = 'DELETE FROM cart_items WHERE cart_id = (SELECT cart_id FROM carts WHERE user_id = ?)';
+            connection.query(clearCartQuery, [userId], (error) => {
+              if (error) {
+                return connection.rollback(() => {
+                  console.error('Error clearing cart:', error);
+                  res.status(500).send('Error clearing cart');
+                });
+              }
+
+              // Commit the transaction
+              connection.commit((commitErr) => {
+                if (commitErr) {
+                  console.error('Commit Error:', commitErr);
+                  return connection.rollback(() => {
+                    res.status(500).send('Error finalizing order placement');
+                  });
+                }
+                res.send('Order placed successfully');
+              });
+            });
+          });
+        } else {
+          // If there are no items to insert, commit the transaction
+          connection.commit((commitErr) => {
+            if (commitErr) {
+              console.error('Commit Error:', commitErr);
+              return connection.rollback(() => {
+                res.status(500).send('Error finalizing order placement');
+              });
+            }
+            res.send('Order placed successfully');
+          });
+        }
+      });
+    });
+  });
+});
+
+
+
+app.get('/orders/:userId', (req, res) => {
+  const { userId } = req.params;
+
+  // Adjusted query to include date fields
+  const query = `
+      SELECT o.order_id, o.total_price, DATE(oi.order_date) as order_date, DATE(oi.processed_date) as processed_date, 
+            DATE(oi.shipped_date) as shipped_date, DATE(oi.out_for_delivery_date) as out_for_delivery_date, DATE(oi.delivered_date) as delivered_date, oi.status,
+            oi.product_id, oi.quantity, oi.price, oi.order_item_id, p.description as product_name, p.image as product_image,
+            a.address_line, a.city, a.state, a.postal_code,
+            pa.card_number, pa.card_type
+      FROM orders o
+      JOIN order_items oi ON o.order_id = oi.order_id
+      JOIN products p ON oi.product_id = p.id
+      JOIN addresses a ON o.shipping_address_id = a.address_id
+      JOIN payments pa ON o.payment_method_id = pa.payment_id
+      WHERE o.user_id = ?;
+  `;
+
+  connection.query(query, [userId], (error, results) => {
+      if (error) {
+          console.error('Error fetching orders:', error);
+          return res.status(500).send('Internal server error');
+      }
+      // Format and send back the results
+      // Note: Additional formatting may be needed to match the frontend structure
+      res.json(results);
   });
 });
 

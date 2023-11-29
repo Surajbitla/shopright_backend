@@ -112,3 +112,71 @@ CREATE TABLE payments (
 truncate table addresses;
 select * from addresses;
 select* from payments; 
+
+-- Ordered - 0
+-- Processed - 30 
+-- Shipped - 50
+-- Out for Delivery - 70
+-- Delivered - 100
+
+
+CREATE TABLE orders (
+	order_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    total_price DECIMAL(10, 2) NOT NULL,
+--     order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+--     processed_date TIMESTAMP NULL,
+--     shipped_date TIMESTAMP NULL,
+--     out_for_delivery_date TIMESTAMP NULL,
+--     delivered_date TIMESTAMP NULL,
+--     status VARCHAR(50) DEFAULT 'Ordered', -- or any default status you'd like
+    shipping_address_id INT NOT NULL,
+    payment_method_id INT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id), 
+    FOREIGN KEY (shipping_address_id) REFERENCES addresses(address_id), 
+    FOREIGN KEY (payment_method_id) REFERENCES payments(payment_id) 
+)AUTO_INCREMENT=25000;
+
+CREATE TABLE order_items (
+    order_item_id INT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT,
+    product_id INT,
+    quantity INT,
+    price DECIMAL(10, 2),
+    order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processed_date TIMESTAMP NULL,
+    shipped_date TIMESTAMP NULL,
+    out_for_delivery_date TIMESTAMP NULL,
+    delivered_date TIMESTAMP NULL,
+    status VARCHAR(50) DEFAULT 'Ordered', -- or any default status you'd like
+    FOREIGN KEY (order_id) REFERENCES orders(order_id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+-- drop table order_items;
+-- drop table orders;
+
+-- truncate table orders;
+-- truncate table order_items;
+
+select * from orders;
+select * from order_items;
+
+
+-- Ordered 
+-- Processed 
+-- Shipped 
+-- Out for Delivery 
+-- Delivered 
+
+UPDATE order_items oi
+JOIN orders o ON oi.order_id = o.order_id
+SET oi.status = 'Out for Delivery', oi.processed_date = DATE('2023-11-29')
+, oi.shipped_date = DATE('2023-11-29')
+-- , oi.out_for_delivery_date = DATE('2023-11-30')
+-- , oi.delivered_date = DATE('2023-11-30')
+WHERE oi.order_item_id = 2 AND o.user_id = 1 AND oi.order_id = 25002;
+
+
+
+
