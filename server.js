@@ -564,6 +564,111 @@ app.put('/payments/:paymentId/set-default', (req, res) => {
 });
 
 
+const sendReceiptEmail = async (email, orderDetails, cartItems) => {
+  const transporter = nodemailer.createTransport({
+      host: "smtp-relay.brevo.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: "surajbitla856@gmail.com",
+        pass: "xsmtpsib-86bb5726d927cbefe740976d6053803a3aea6fbab13f45a5526608de136c9688-jIQm0GJA4wTFxUbs"
+      }
+  });
+
+  const itemsHtml = cartItems.map(item => {
+    const price = parseFloat(item.price);
+    return `
+        <tr>
+            <td>${item.product_name}</td>
+            <td>${item.quantity}</td>
+            <td>$${price.toFixed(2)}</td>
+            <td>$${((item.quantity * price) + (price* 0.10)).toFixed(2)}</td>
+        </tr>`;
+}).join('');
+
+  const mailOptions = {
+      from: 'surajbitla856@gmail.com',
+      to: email,
+      subject: 'Your Order Receipt from ShopRight',
+      html: `
+      <div style="font-family: Arial, sans-serif; color: #333;">
+          <h2>Thank you for your order!</h2>
+          <p>Here are the details of your order:</p>
+          <table border="1" cellpadding="5" cellspacing="0" style="width: 100%; border-collapse: collapse;">
+              <tr>
+                  <th>Product</th>
+                  <th>Quantity</th>
+                  <th>Price</th>
+                  <th>Total</th>
+              </tr>
+              ${itemsHtml}
+          </table>
+          <h3>Order Summary:</h3>
+          <p>Order Number: ${orderDetails.orderId}</p>
+          <p>Total Price: $${orderDetails.totalPrice.toFixed(2)}</p>
+          <p>Shipping Address: ${orderDetails.shippingAddress}</p>
+          <p>Payment Method: ${orderDetails.paymentMethod}</p>
+          <p>If you have any questions or concerns about your order, please contact us at support@shopright.com.</p>
+          <p>Thank you for shopping with ShopRight!</p>
+      </div>
+  `
+  };
+
+  try {
+      await transporter.sendMail(mailOptions);
+      console.log('Order receipt sent to email!');
+  } catch (error) {
+      console.error('Error sending order receipt email:', error);
+  }
+}
+
+const sendReceiptEmailToUser = (userId, orderId, cartItems, totalPrice, shippingAddressId, paymentMethodId) => {
+  // Fetch user email and other necessary details
+  const userEmailQuery = 'SELECT email FROM users WHERE id = ?';
+  const shippingAddressQuery = 'SELECT address_line, city, state, postal_code FROM addresses WHERE address_id = ?';
+  const paymentMethodQuery = 'SELECT card_number, card_type FROM payments WHERE payment_id = ?';
+
+  // First, get the user's email
+  connection.query(userEmailQuery, [userId], (userError, userResults) => {
+      if (userError || userResults.length === 0) {
+          console.error('Error retrieving user details:', userError);
+          return;
+      }
+      const userEmail = userResults[0].email;
+
+      // Next, get the shipping address
+      connection.query(shippingAddressQuery, [shippingAddressId], (shippingError, shippingResults) => {
+          if (shippingError || shippingResults.length === 0) {
+              console.error('Error retrieving shipping details:', shippingError);
+              return;
+          }
+          const shippingAddress = `${shippingResults[0].address_line}, ${shippingResults[0].city}, ${shippingResults[0].state}, ${shippingResults[0].postal_code}`;
+
+          // Finally, get the payment method
+          connection.query(paymentMethodQuery, [paymentMethodId], (paymentError, paymentResults) => {
+              if (paymentError || paymentResults.length === 0) {
+                  console.error('Error retrieving payment details:', paymentError);
+                  return;
+              }
+              const paymentMethod = `${paymentResults[0].card_type} ending in ${paymentResults[0].card_number.substr(-4)}`;
+
+              const orderDetails = {
+                  orderId: orderId,
+                  totalPrice: totalPrice,
+                  shippingAddress: shippingAddress,
+                  paymentMethod: paymentMethod
+              };
+              console.log(cartItems[0]);
+              // Send the receipt email
+              sendReceiptEmail(userEmail, orderDetails, cartItems).catch(emailError => {
+                  console.error('Error sending receipt email:', emailError);
+              });
+          });
+      });
+  });
+}
+
+
 
 app.post('/place-order', (req, res) => {
   const { userId, totalPrice, shippingAddressId, paymentMethodId } = req.body;
@@ -590,7 +695,13 @@ app.post('/place-order', (req, res) => {
       const orderId = orderResult.insertId;
 
       // Step 2: Retrieve cart items
-      const selectCartItemsQuery = 'SELECT product_id, quantity, price FROM cart_items WHERE cart_id = (SELECT cart_id FROM carts WHERE user_id = ?)';
+      //const selectCartItemsQuery = 'SELECT product_id, quantity, price FROM cart_items WHERE cart_id = (SELECT cart_id FROM carts WHERE user_id = ?)';
+      const selectCartItemsQuery = `
+                SELECT ci.product_id, ci.quantity, ci.price, p.description as product_name
+                FROM cart_items ci
+                JOIN products p ON ci.product_id = p.id
+                WHERE cart_id = (SELECT cart_id FROM carts WHERE user_id = ?)
+            `;
       connection.query(selectCartItemsQuery, [userId], (error, cartItems) => {
         if (error) {
           return connection.rollback(() => {
@@ -629,6 +740,7 @@ app.post('/place-order', (req, res) => {
                     res.status(500).send('Error finalizing order placement');
                   });
                 }
+                sendReceiptEmailToUser(userId, orderId, cartItems, totalPrice, shippingAddressId, paymentMethodId);
                 res.send('Order placed successfully');
               });
             });
