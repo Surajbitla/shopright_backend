@@ -605,7 +605,7 @@ const sendReceiptEmail = async (email, orderDetails, cartItems) => {
           </table>
           <h3>Order Summary:</h3>
           <p>Order Number: ${orderDetails.orderId}</p>
-          <p>Total Price: $${orderDetails.totalPrice.toFixed(2)}</p>
+          <p>Total Price (Inclusive of tax): $${orderDetails.totalPrice.toFixed(2)}</p>
           <p>Shipping Address: ${orderDetails.shippingAddress}</p>
           <p>Payment Method: ${orderDetails.paymentMethod}</p>
           <p>If you have any questions or concerns about your order, please contact us at support@shopright.com.</p>
@@ -792,6 +792,89 @@ app.get('/orders/:userId', (req, res) => {
       res.json(results);
   });
 });
+
+
+//For Admin
+// Fetch all users
+app.get('/api/users', (req, res) => {
+  const query = 'SELECT id, CONCAT(firstName, \' \', lastName) as name, email FROM users;';
+  connection.query(query, (error, results) => {
+      if (error) {
+          console.error('Error fetching users:', error);
+          return res.status(500).send('Internal server error');
+      }
+      res.json(results);
+  });
+});
+
+// Fetch orders for a specific user
+app.get('/api/orders/user/:userId', (req, res) => {
+  const { userId } = req.params;
+  const query = 'SELECT order_id FROM orders WHERE user_id = ?;';
+  connection.query(query, [userId], (error, results) => {
+      if (error) {
+          console.error(`Error fetching orders for user ${userId}:`, error);
+          return res.status(500).send('Internal server error');
+      }
+      res.json(results);
+  });
+});
+
+// Fetch order items for a specific order
+app.get('/api/order-items/:orderId', (req, res) => {
+  const { orderId } = req.params;
+  const query = 'SELECT order_item_id, product_id, quantity, status FROM order_items WHERE order_id = ?;';
+  connection.query(query, [orderId], (error, results) => {
+      if (error) {
+          console.error(`Error fetching order items for order ${orderId}:`, error);
+          return res.status(500).send('Internal server error');
+      }
+      res.json(results);
+  });
+});
+
+app.post('/api/update-order-item', (req, res) => {
+  const { orderItemId, newStatus, dateFields } = req.body; // dateFields is an object like { processed_date: 'YYYY-MM-DD', ... }
+
+  // Validate orderItemId and newStatus
+  if (!orderItemId || !newStatus) {
+    return res.status(400).send('Missing required fields');
+  }
+
+  // Prepare date updates
+  let dateUpdates = Object.entries(dateFields).reduce((acc, [field, value]) => {
+    // Add SQL update statement for each valid date field
+    if (value && ['processed_date', 'shipped_date', 'out_for_delivery_date', 'delivered_date'].includes(field)) {
+      acc.push(`${field} = ${connection.escape(value)}`);
+    }
+    return acc;
+  }, []);
+
+  // Combine date update statements
+  let dateUpdatesSql = dateUpdates.join(', ');
+
+  // Ensure there's at least one date field to update
+  if (dateUpdatesSql.length === 0) {
+    return res.status(400).send('No valid date fields provided');
+  }
+
+  // SQL Query
+  const query = `
+      UPDATE order_items
+      SET status = ${connection.escape(newStatus)}, ${dateUpdatesSql}
+      WHERE order_item_id = ${connection.escape(orderItemId)};
+  `;
+
+  // Execute query
+  connection.query(query, (error, results) => {
+      if (error) {
+          console.error('Error updating order item:', error);
+          return res.status(500).send('Error updating order item');
+      }
+      res.send('Order item updated successfully');
+  });
+});
+
 
 
 
