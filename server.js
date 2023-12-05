@@ -779,7 +779,7 @@ app.get('/orders/:userId', (req, res) => {
       JOIN products p ON oi.product_id = p.id
       JOIN addresses a ON o.shipping_address_id = a.address_id
       JOIN payments pa ON o.payment_method_id = pa.payment_id
-      WHERE o.user_id = ?;
+      WHERE o.user_id = ? order by o.order_id desc;
   `;
 
   connection.query(query, [userId], (error, results) => {
