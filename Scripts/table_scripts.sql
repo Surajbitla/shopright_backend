@@ -148,7 +148,13 @@ CREATE TABLE order_items (
     shipped_date TIMESTAMP NULL,
     out_for_delivery_date TIMESTAMP NULL,
     delivered_date TIMESTAMP NULL,
+    initiated_date TIMESTAMP NULL,
+    picked_up_date TIMESTAMP NULL,
+    received_date TIMESTAMP NULL,
+    refund_issued_date TIMESTAMP NULL,
+    refund_credited_date TIMESTAMP NULL,
     status VARCHAR(50) DEFAULT 'Ordered', -- or any default status you'd like
+    cancelled_status VARCHAR(50) DEFAULT 'Initiated',
     FOREIGN KEY (order_id) REFERENCES orders(order_id),
     FOREIGN KEY (product_id) REFERENCES products(id)
 );
@@ -168,14 +174,6 @@ select * from order_items;
 -- Shipped 
 -- Out for Delivery 
 -- Delivered 
-
-UPDATE order_items oi
-JOIN orders o ON oi.order_id = o.order_id
-SET oi.status = 'Out for Delivery', oi.processed_date = DATE('2023-11-29')
-, oi.shipped_date = DATE('2023-11-29')
--- , oi.out_for_delivery_date = DATE('2023-11-30')
--- , oi.delivered_date = DATE('2023-11-30')
-WHERE oi.order_item_id = 2 AND o.user_id = 1 AND oi.order_id = 25002;
 
 
 

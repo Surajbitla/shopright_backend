@@ -608,6 +608,7 @@ const sendReceiptEmail = async (email, orderDetails, cartItems) => {
           <p>Total Price (Inclusive of tax): $${orderDetails.totalPrice.toFixed(2)}</p>
           <p>Shipping Address: ${orderDetails.shippingAddress}</p>
           <p>Payment Method: ${orderDetails.paymentMethod}</p>
+          <p><a href="http://localhost:3000/login" style="background-color: #0046f4; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Log In</a></p>
           <p>If you have any questions or concerns about your order, please contact us at support@shopright.com.</p>
           <p>Thank you for shopping with ShopRight!</p>
       </div>
@@ -771,6 +772,8 @@ app.get('/orders/:userId', (req, res) => {
   const query = `
       SELECT o.order_id, o.total_price, DATE(oi.order_date) as order_date, DATE(oi.processed_date) as processed_date, 
             DATE(oi.shipped_date) as shipped_date, DATE(oi.out_for_delivery_date) as out_for_delivery_date, DATE(oi.delivered_date) as delivered_date, oi.status,
+            DATE(oi.initiated_date) as initiated_date, DATE(oi.picked_up_date) as picked_up_date, DATE(oi.received_date) as received_date, oi.cancelled_status,
+            DATE(oi.refund_issued_date) as refund_issued_date, DATE(oi.refund_credited_date) as refund_credited_date,
             oi.product_id, oi.quantity, oi.price, oi.order_item_id, p.description as product_name, p.image as product_image,
             a.address_line, a.city, a.state, a.postal_code,
             pa.card_number, pa.card_type
@@ -834,7 +837,11 @@ app.get('/api/order-items/:orderId', (req, res) => {
 });
 
 app.post('/api/update-order-item', (req, res) => {
-  const { orderItemId, newStatus, dateFields } = req.body; // dateFields is an object like { processed_date: 'YYYY-MM-DD', ... }
+  const { orderItemId, newStatus, dateFields } = req.body;
+
+  // Define status arrays
+  const statusUpdates = ['Processed', 'Shipped', 'Out for Delivery', 'Delivered'];
+  const cancelledStatusUpdates = ['Picked Up', 'Received', 'Refund Issued', 'Refund Credited'];
 
   // Validate orderItemId and newStatus
   if (!orderItemId || !newStatus) {
@@ -843,25 +850,33 @@ app.post('/api/update-order-item', (req, res) => {
 
   // Prepare date updates
   let dateUpdates = Object.entries(dateFields).reduce((acc, [field, value]) => {
-    // Add SQL update statement for each valid date field
-    if (value && ['processed_date', 'shipped_date', 'out_for_delivery_date', 'delivered_date'].includes(field)) {
+    if (value && ['processed_date', 'shipped_date', 'out_for_delivery_date', 'delivered_date','picked_up_date','received_date','refund_issued_date','refund_credited_date'].includes(field)) {
       acc.push(`${field} = ${connection.escape(value)}`);
     }
     return acc;
   }, []);
 
+  let statusField = statusUpdates.includes(newStatus) ? 'status' : cancelledStatusUpdates.includes(newStatus) ? 'cancelled_status' : null;
+
+  // If statusField is null, the status is not valid
+  if (!statusField) {
+    return res.status(400).send('Invalid status');
+  }
+
   // Combine date update statements
   let dateUpdatesSql = dateUpdates.join(', ');
+  let statusUpdateSql = `${statusField} = ${connection.escape(newStatus)}`;
 
-  // Ensure there's at least one date field to update
-  if (dateUpdatesSql.length === 0) {
-    return res.status(400).send('No valid date fields provided');
+  // Ensure there's at least one date field or status to update
+  if (dateUpdatesSql.length === 0 && !statusUpdateSql) {
+    return res.status(400).send('No valid fields provided for update');
   }
 
   // SQL Query
+  let queryParts = [statusUpdateSql, ...dateUpdates].filter(part => part.length > 0);
   const query = `
       UPDATE order_items
-      SET status = ${connection.escape(newStatus)}, ${dateUpdatesSql}
+      SET ${queryParts.join(', ')}
       WHERE order_item_id = ${connection.escape(orderItemId)};
   `;
 
@@ -872,6 +887,68 @@ app.post('/api/update-order-item', (req, res) => {
           return res.status(500).send('Error updating order item');
       }
       res.send('Order item updated successfully');
+  });
+});
+
+
+app.post('/cancel-order-item', (req, res) => {
+  const { orderItemId } = req.body;
+
+  connection.beginTransaction((err) => {
+    if (err) {
+      console.error('Transaction Error:', err);
+      return res.status(500).send('Internal server error');
+    }
+
+    // Step 1: Check the current status of the order item
+    const checkOrderItemStatusQuery = 'SELECT status FROM order_items WHERE order_item_id = ?';
+    connection.query(checkOrderItemStatusQuery, [orderItemId], (error, orderItemResults) => {
+      if (error) {
+        return connection.rollback(() => {
+          console.error('Error checking order item status:', error);
+          res.status(500).send('Error checking order item status');
+        });
+      }
+
+      if (orderItemResults.length === 0) {
+        return res.status(404).send('Order item not found');
+      }
+
+      const currentItemStatus = orderItemResults[0].status;
+      let newItemStatus = '';
+
+      // Step 2: Determine the new status based on current status
+      if (['Ordered', 'Processed', 'Shipped'].includes(currentItemStatus)) {
+        newItemStatus = 'Cancelled Before Delivery';
+      } else if (['Out for Delivery', 'Delivered'].includes(currentItemStatus)) {
+        newItemStatus = 'Cancelled After Delivery';
+      } else {
+        return res.status(400).send('Order item cannot be cancelled at this stage');
+      }
+
+      // Step 3: Update the order item status and set the initiated_date
+      const updateOrderItemStatusQuery = 'UPDATE order_items SET status = ?, initiated_date = NOW() WHERE order_item_id = ?;';
+
+      connection.query(updateOrderItemStatusQuery, [newItemStatus, orderItemId], (error) => {
+        if (error) {
+          return connection.rollback(() => {
+            console.error('Error updating order item status:', error);
+            res.status(500).send('Error updating order item status');
+          });
+        }
+
+        // Commit the transaction
+        connection.commit((commitErr) => {
+          if (commitErr) {
+            console.error('Commit Error:', commitErr);
+            return connection.rollback(() => {
+              res.status(500).send('Error finalizing order item cancellation');
+            });
+          }
+          res.send('Order item cancelled successfully');
+        });
+      });
+    });
   });
 });
 
