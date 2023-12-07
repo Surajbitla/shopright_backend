@@ -93,6 +93,10 @@ app.post('/signup',async  (req, res) => {
     connection.query(query, [firstName, lastName, email, phoneNumber, hashedPassword], async (error, results) => {
         if (error) {
             console.error("Error inserting into database:", error);
+            if (error.code === 'ER_DUP_ENTRY') {
+              res.status(409).send("Error registering the user: Duplicate entry");
+              return;
+            }
             res.status(500).send("Error registering the user");
             return;
         }
