@@ -55,8 +55,8 @@ const sendEmail = async (email, tempPassword) => {
         port: 587,
         secure: false,
         auth: {
-            user: "surajbitla856@gmail.com",
-            pass: "xsmtpsib-86bb5726d927cbefe740976d6053803a3aea6fbab13f45a5526608de136c9688-jIQm0GJA4wTFxUbs"
+            user: "mygmail@gmail.com",
+            pass: "xsmtpsib-pass"
         }
     });
 
