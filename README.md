@@ -1,4 +1,5 @@
-# Shopright_backend
+
+# ShopRight
 
 ## Introduction
 ShopRight is a digital marketplace where customers can explore a variety of products, conduct product searches, examine detailed product information, and complete purchases using their credit or debit cards.
@@ -110,6 +111,9 @@ const connection = mysql.createConnection({
 1. Ensure MySQL is installed and running on your system.
 2. Run the provided script files located in the `shopright-backend` repository to set up the database schema.
 
+
+##### Database Design
+![Database Design](https://github.com/Surajbitla/shopright/assets/135169955/e8659021-0292-4a9c-8b74-6e4709615145)
 ## Features
 - Detailed product catalog
 - User-friendly shopping cart and checkout process
@@ -222,4 +226,3 @@ This is currently the first version (Version 1.0) of ShopRight, marking the init
 - Suraj Bitla
 - [surajb.5639@gmail.com](mailto:surajb.5639@gmail.com)
 - [LinkedIn](https://www.linkedin.com/in/suraj-bitla-73a623148/)
-
